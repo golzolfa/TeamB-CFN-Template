@@ -1,0 +1,253 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: CloudFormation template for TeamB project including Lambda functions, DynamoDB table, S3 access, and AWS Glue job.
+
+Resources:
+  TeamBLambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: "TeamB-LambdaExecutionRole"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: "TeamB-LambdaExecutionPolicy"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - dynamodb:PutItem
+                  - dynamodb:GetItem
+                  - dynamodb:UpdateItem
+                  - dynamodb:DeleteItem
+                Resource: !GetAtt TeamBUserTable.Arn
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                Resource: "arn:aws:s3:::mycode-bucket-teamb/teamB/*"
+              - Effect: Allow
+                Action:
+                  - glue:StartJobRun
+                Resource: "*"
+
+  TeamBUserTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: "TeamBUserTable"
+      AttributeDefinitions:
+        - AttributeName: "UserID"
+          AttributeType: "S"
+      KeySchema:
+        - AttributeName: "UserID"
+          KeyType: "HASH"
+      ProvisionedThroughput:
+        ReadCapacityUnits: 5
+        WriteCapacityUnits: 5
+
+  TeamBCRUDUserFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: "TeamB-CRUDUserFunction"
+      Handler: "index.handler"
+      Role: !GetAtt TeamBLambdaExecutionRole.Arn
+      Code:
+        S3Bucket: "mycode-bucket-teamb"
+        S3Key: "teamB/crud_user_function.zip"
+      Runtime: "python3.8"
+
+  TeamBTriggerGlueFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: "TeamB-TriggerGlueFunction"
+      Handler: "index.handler"
+      Role: !GetAtt TeamBLambdaExecutionRole.Arn
+      Code:
+        S3Bucket: "mycode-bucket-teamb"
+        S3Key: "teamB/trigger_glue_function.zip"
+      Runtime: "python3.8"
+
+  TeamBGetS3ObjectFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: "TeamB-GetS3ObjectFunction"
+      Handler: "index.handler"
+      Role: !GetAtt TeamBLambdaExecutionRole.Arn
+      Code:
+        S3Bucket: "mycode-bucket-teamb"
+        S3Key: "teamB/get_s3_object_function.zip"
+      Runtime: "python3.8"
+
+  TeamBUserAPI:
+    Type: AWS::ApiGateway::RestApi
+    Properties:
+      Name: "TeamBUserAPI"
+      Description: "API for CRUD operations on users"
+
+  TeamBUserResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref TeamBUserAPI
+      ParentId: !GetAtt TeamBUserAPI.RootResourceId
+      PathPart: "user"
+
+  TeamBGetUserMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      AuthorizationType: NONE
+      HttpMethod: GET
+      ResourceId: !Ref TeamBUserResource
+      RestApiId: !Ref TeamBUserAPI
+      Integration:
+        IntegrationHttpMethod: POST
+        Type: AWS_PROXY
+        Uri: !Sub arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${TeamBCRUDUserFunction.Arn}/invocations
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseTemplates:
+              application/json: "#set($inputRoot = $input.path('$'))\n{\n  \"message\": \"$inputRoot.message\"\n}"
+      MethodResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Origin: "'*'"
+
+  TeamBPostUserMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      AuthorizationType: NONE
+      HttpMethod: POST
+      ResourceId: !Ref TeamBUserResource
+      RestApiId: !Ref TeamBUserAPI
+      Integration:
+        IntegrationHttpMethod: POST
+        Type: AWS_PROXY
+        Uri: !Sub arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${TeamBCRUDUserFunction.Arn}/invocations
+        IntegrationResponses:
+          - StatusCode: 201
+            ResponseTemplates:
+              application/json: "#set($inputRoot = $input.path('$'))\n{\n  \"message\": \"$inputRoot.message\"\n}"
+      MethodResponses:
+        - StatusCode: 201
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Origin: "'*'"
+
+  TeamBPutUserMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      AuthorizationType: NONE
+      HttpMethod: PUT
+      ResourceId: !Ref TeamBUserResource
+      RestApiId: !Ref TeamBUserAPI
+      Integration:
+        IntegrationHttpMethod: POST
+        Type: AWS_PROXY
+        Uri: !Sub arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${TeamBCRUDUserFunction.Arn}/invocations
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseTemplates:
+              application/json: "#set($inputRoot = $input.path('$'))\n{\n  \"message\": \"$inputRoot.message\"\n}"
+      MethodResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Origin: "'*'"
+
+  TeamBDeleteUserMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      AuthorizationType: NONE
+      HttpMethod: DELETE
+      ResourceId: !Ref TeamBUserResource
+      RestApiId: !Ref TeamBUserAPI
+      Integration:
+        IntegrationHttpMethod: POST
+        Type: AWS_PROXY
+        Uri: !Sub arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${TeamBCRUDUserFunction.Arn}/invocations
+        IntegrationResponses:
+          - StatusCode: 204
+            ResponseTemplates:
+              application/json: "{}"
+      MethodResponses:
+        - StatusCode: 204
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Origin: "'*'"
+
+  TeamBGlueResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref TeamBUserAPI
+      ParentId: !GetAtt TeamBUserAPI.RootResourceId
+      PathPart: "glue"
+
+  TeamBPostGlueMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      AuthorizationType: NONE
+      HttpMethod: POST
+      ResourceId: !Ref TeamBGlueResource
+      RestApiId: !Ref TeamBUserAPI
+      Integration:
+        IntegrationHttpMethod: POST
+        Type: AWS_PROXY
+        Uri: !Sub arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${TeamBTriggerGlueFunction.Arn}/invocations
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseTemplates:
+              application/json: "#set($inputRoot = $input.path('$'))\n{\n  \"message\": \"$inputRoot.message\"\n}"
+      MethodResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Origin: "'*'"
+
+  TeamBBucketResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref TeamBUserAPI
+      ParentId: !GetAtt TeamBUserAPI.RootResourceId
+      PathPart: "bucket"
+
+  TeamBGetBucketMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      AuthorizationType: NONE
+      HttpMethod: GET
+      ResourceId: !Ref TeamBBucketResource
+      RestApiId: !Ref TeamBUserAPI
+      Integration:
+        IntegrationHttpMethod: POST
+        Type: AWS_PROXY
+        Uri: !Sub arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${TeamBGetS3ObjectFunction.Arn}/invocations
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseTemplates:
+              application/json: "#set($inputRoot = $input.path('$'))\n{\n  \"message\": \"$inputRoot.message\"\n}"
+      MethodResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Origin: "'*'"
+
+  TeamBDeployment:
+    Type: AWS::ApiGateway::Deployment
+    DependsOn:
+      - TeamBGetUserMethod
+      - TeamBPostUserMethod
+      - TeamBPutUserMethod
+      - TeamBDeleteUserMethod
+      - TeamBPostGlueMethod
+      - TeamBGetBucketMethod
+    Properties:
+      RestApiId: !Ref TeamBUserAPI
+      StageName: "prod"
+
+Outputs:
+  UserAPIUrl:
+    Description: "URL of the API Gateway endpoint for TeamB"
+    Value: !Sub "https://${TeamBUserAPI}.execute-api.${AWS::Region}.amazonaws.com/prod/user"
