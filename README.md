@@ -1,2 +1,2 @@
 # TeamBFinalProject
-You can find terraform file for using in cludforamtion here.
+You can find template file for using in cludforamtion here.
